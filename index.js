@@ -31,6 +31,7 @@ const allowedOrigins = [
   'http://10.0.1.3:3000',
   'http://192.168.248.88:3001',
   'http://172.20.10.2:3000',
+  "http://192.168.254.88:3002",
   'https://thurderxtorm.netlify.app'
 ]
 
