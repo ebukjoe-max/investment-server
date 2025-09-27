@@ -31,8 +31,9 @@ const allowedOrigins = [
   'http://10.0.1.3:3000',
   'http://192.168.248.88:3001',
   'http://172.20.10.2:3000',
-  "http://192.168.254.88:3001",
-  'https://thurderxtorm.netlify.app'
+  'http://192.168.254.88:3001',
+  'https://thurderxtorm.netlify.app',
+  'https://thurderxfinanceltd.netlify.app'
 ]
 
 app.use(
