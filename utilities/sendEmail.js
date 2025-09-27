@@ -3,14 +3,12 @@ import emailContentTemplate from './emailContentTemplate.js'
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.hostinger.com',
+  pool: process.env.MAIL_POOL,
   port: process.env.MAIL_PORT, // 👈 use 465 with secure true
   secure: process.env.SECURE,
   auth: {
     user: process.env.EMAIL, // full email address
     pass: process.env.EMAIL_PASSWORD // mailbox password
-  },
-  tls: {
-    rejectUnauthorized: false // helps avoid SSL cert issues
   }
 })
 
