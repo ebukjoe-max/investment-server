@@ -2,9 +2,8 @@ import nodemailer from 'nodemailer'
 import emailContentTemplate from './emailContentTemplate.js'
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.hostinger.com',
-  port: 587,
-  secure: false, // STARTTLS
+  service: 'gmail',
+  pool: process.env.MAIL_POOL === 'true',
   auth: {
     user: process.env.EMAIL,
     pass: process.env.EMAIL_PASSWORD
