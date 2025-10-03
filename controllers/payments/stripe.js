@@ -1,90 +1,131 @@
 import Stripe from 'stripe'
 import dotenv from 'dotenv'
-import User from '../../models/userModel.js'
-import {
-  logTransaction,
-  updateTransactionStatus
-} from '../../utilities/Transaction.js'
+import Transactions from '../../models/Transaction.js'
+import UserWallet from '../../models/UserWallet.js'
+import sendEmail from '../../utilities/sendEmail.js'
+import UserInfo from '../../models/userModel.js'
+import DepositModel from '../../models/depositModel.js'
 
 dotenv.config()
-
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
-// ✅ Create PaymentIntent
-export const createPaymentIntent = async (req, res) => {
+// ✅ Create a deposit with Stripe PaymentIntent
+export const createCardDeposit = async (req, res) => {
+  console.log(req.body)
   try {
-    const { userId, amount, currency = 'usd', method = 'card' } = req.body
+    const {
+      userId,
+      walletId,
+      amount,
+      coinRate,
+      convertedAmount,
+      walletsymbol
+    } = req.body
 
-    if (!amount || isNaN(amount)) {
-      return res.status(400).json({ msg: 'Amount is required' })
+    if (
+      !userId ||
+      !walletId ||
+      !amount ||
+      !coinRate ||
+      !convertedAmount ||
+      !walletsymbol
+    ) {
+      return res.status(400).json({ message: 'Missing required fields' })
     }
-    const user = await User.findById(userId)
 
-    // Create an order (with unique ID for tracking)
-    const orderId = new Date().getTime().toString()
-
-    const order = {
-      _id: orderId,
-      items: [], // no cart items in deposit flow
-      total: amount,
-      status: 'pending',
-      paymentMethod: method
+    // Find user
+    const user = await UserInfo.findById(userId)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
     }
 
-    // Save order to user
-    await User.findByIdAndUpdate(userId, {
-      $push: { orders: order }
+    // Check duplicate
+    const existingDeposit = await DepositModel.findOne({
+      userId,
+      walletId,
+      method: 'card',
+      amount: parseFloat(amount),
+      status: 'pending'
     })
 
-    // Create PaymentIntent
+    if (existingDeposit) {
+      return res.status(409).json({
+        message: 'A similar card deposit is already pending.',
+        deposit: existingDeposit
+      })
+    }
+
+    // Create Transaction (pending)
+    const transaction = await Transactions.create({
+      userId,
+      amount: parseFloat(amount),
+      coin: walletsymbol,
+      type: 'Deposit',
+      method: 'card',
+      status: 'pending'
+    })
+
+    const reference = `CARD-DEP-${Date.now()}-${Math.floor(
+      Math.random() * 1000
+    )}`
+
+    // Create Deposit (pending)
+    const deposit = await DepositModel.create({
+      userId,
+      transactionId: transaction._id,
+      walletId,
+      walletsymbol,
+      method: 'card',
+      amount,
+      coinRate,
+      convertedAmount,
+      receipt: 'Stripe', // no upload needed
+      status: 'pending',
+      reference
+    })
+
+    // Create Stripe PaymentIntent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe expects cents
-      currency,
-      metadata: { userId, orderId },
+      amount: Math.round(amount * 100), // Stripe in cents
+      currency: 'usd',
+      metadata: { userId, walletId, depositId: deposit._id.toString() },
       automatic_payment_methods: { enabled: true }
     })
 
-    // Log transaction
-    await logTransaction({
-      userId,
-      amount,
-      coin: 'USD',
-      method: 'Stripe',
-      status: 'pending',
-      refId: orderId
-    })
-
-    // Send Email to User
+    // Send email (pending)
     await sendEmail(
       user.email,
-      'Deposit Received',
+      'Card Deposit Initiated',
       `
-            <p>Hi <b>${user.firstname}</b>,</p>
-            <p>You made a deposit of <b>$${amount}</b>. 
-            Your transaction is <b>pending admin approval</b>.</p>
-            <p>Reference ID: <code>${refId}</code></p>
-          `
+        <p>Hi <b>${user.firstname}</b>,</p>
+        <p>You initiated a deposit of <b>$${convertedAmount}</b> with Card.</p>
+        <p>Status: <b>Pending Payment Confirmation</b></p>
+        <p>Reference ID: <code>${deposit.reference}</code></p>
+      `
     )
 
-    // Send Email to Admin
     await sendEmail(
       process.env.ADMIN_EMAIL,
-      'New Deposit Alert',
+      'New Card Deposit Initiated',
       `
-            <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) just made a deposit.</p>
-            <ul>
-              <li><b>Amount:</b> $${amount}</li>
-              <li><b>Method:</b> ${method}</li>
-              <li><b>Reference ID:</b> ${refId}</li>
-            </ul>
-            <p>Login to the admin panel to review and approve this deposit.</p>
-          `
+        <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) initiated a card deposit.</p>
+        <ul>
+          <li><b>Amount:</b> $${convertedAmount}</li>
+          <li><b>Method:</b> Card</li>
+          <li><b>Reference ID:</b> ${deposit.reference}</li>
+        </ul>
+        <p>Awaiting Stripe confirmation...</p>
+      `
     )
 
-    res.json({ clientSecret: paymentIntent.client_secret })
+    res.status(201).json({
+      message: 'Card deposit created',
+      deposit,
+      clientSecret: paymentIntent.client_secret
+    })
   } catch (err) {
-    console.error('❌ PaymentIntent error:', err)
-    res.status(500).json({ msg: 'Payment failed', error: err.message })
+    console.error('❌ Error creating card deposit:', err)
+    res.status(500).json({ message: 'Server error' })
   }
 }
 
@@ -94,7 +135,7 @@ export const stripeWebhook = async (req, res) => {
   try {
     const sig = req.headers['stripe-signature']
     event = stripe.webhooks.constructEvent(
-      req.body, // ⚠ raw body required
+      req.body, // ⚠️ must use raw body middleware
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     )
@@ -103,24 +144,45 @@ export const stripeWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
-  // Handle successful payment
   if (event.type === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object
-    const { userId, orderId } = paymentIntent.metadata
+    const intent = event.data.object
+    const { userId, depositId } = intent.metadata
 
     try {
-      // ✅ Update order status
-      await User.findOneAndUpdate(
-        { _id: userId, 'orders._id': orderId },
-        { $set: { 'orders.$.status': 'paid' } }
+      // Mark deposit as approved
+      await DepositModel.findByIdAndUpdate(depositId, { status: 'approved' })
+
+      // Mark transaction as completed
+      await Transactions.findOneAndUpdate(
+        { _id: intent.metadata.transactionId },
+        { status: 'approved' }
       )
 
-      // ✅ Update transaction log
-      await updateTransactionStatus(orderId, 'paid')
+      // Credit wallet balance
+      await UserWallet.findOneAndUpdate(
+        { userId },
+        { $inc: { balance: intent.amount_received / 100 } }
+      )
 
-      console.log(`✅ Order ${orderId} for user ${userId} marked as PAID`)
+      // Notify user
+      const user = await UserInfo.findById(userId)
+      if (user) {
+        await sendEmail(
+          user.email,
+          'Card Deposit Successful',
+          `
+            <p>Hi <b>${user.firstname}</b>,</p>
+            <p>Your card deposit of <b>$${
+              intent.amount_received / 100
+            }</b> was successful!</p>
+            <p>Funds have been credited to your wallet.</p>
+          `
+        )
+      }
+
+      console.log(`✅ Deposit ${depositId} marked as approved`)
     } catch (err) {
-      console.error('Failed to update order:', err)
+      console.error('❌ Failed to update deposit on webhook:', err)
     }
   }
 

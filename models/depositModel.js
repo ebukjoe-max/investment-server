@@ -16,7 +16,7 @@ const depositSchema = new mongoose.Schema(
     amount: { type: Number, required: true },
     method: {
       type: String,
-      enum: ['crypto', 'bank', 'cashapp', 'applepay'],
+      enum: ['crypto', 'bank', 'cashapp', 'applepay', 'card'],
       required: true
     },
     convertedAmount: { type: String, required: true }, // amount after conversion to selected coin

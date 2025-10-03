@@ -18,6 +18,10 @@ import {
   getAllDeposits,
   updateDepositStatus
 } from '../../controllers/Transactions/deposit.js'
+import {
+  createCardDeposit,
+  stripeWebhook
+} from '../../controllers/payments/stripe.js'
 
 const router = express.Router()
 
@@ -37,6 +41,13 @@ router.get('/withdraw/withdrawal', getWithdrawals)
 router.put('/withdrawal/:id/status', updateWithdrawalStatus)
 
 // DEPOSIT
+
+router.post('/create-payment-intent', createCardDeposit)
+router.post(
+  '/webhook',
+  express.raw({ type: 'application/json' }),
+  stripeWebhook
+)
 router.get('/deposit/user', getAllDeposits) // get all user deposits
 router.post('/deposit', createDeposit) // user submit deposit
 router.put('/deposit/:id/status', updateDepositStatus)
