@@ -18,6 +18,7 @@ export const createPaymentIntent = async (req, res) => {
     if (!amount || isNaN(amount)) {
       return res.status(400).json({ msg: 'Amount is required' })
     }
+    const user = await User.findById(userId)
 
     // Create an order (with unique ID for tracking)
     const orderId = new Date().getTime().toString()
@@ -52,6 +53,33 @@ export const createPaymentIntent = async (req, res) => {
       status: 'pending',
       refId: orderId
     })
+
+    // Send Email to User
+    await sendEmail(
+      user.email,
+      'Deposit Received',
+      `
+            <p>Hi <b>${user.firstname}</b>,</p>
+            <p>You made a deposit of <b>$${amount}</b>. 
+            Your transaction is <b>pending admin approval</b>.</p>
+            <p>Reference ID: <code>${refId}</code></p>
+          `
+    )
+
+    // Send Email to Admin
+    await sendEmail(
+      process.env.ADMIN_EMAIL,
+      'New Deposit Alert',
+      `
+            <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) just made a deposit.</p>
+            <ul>
+              <li><b>Amount:</b> $${amount}</li>
+              <li><b>Method:</b> ${method}</li>
+              <li><b>Reference ID:</b> ${refId}</li>
+            </ul>
+            <p>Login to the admin panel to review and approve this deposit.</p>
+          `
+    )
 
     res.json({ clientSecret: paymentIntent.client_secret })
   } catch (err) {
