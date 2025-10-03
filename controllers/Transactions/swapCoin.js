@@ -22,17 +22,17 @@ export const swapCoins = async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance.' })
     }
 
-    // ✅ Deduct and Add balances
+    // USD logic: subtract and add same USD amount
     fromWallet.balance -= parseFloat(amount)
     if (toWallet) {
-      toWallet.balance += parseFloat(receiveAmount)
+      toWallet.balance += parseFloat(amount)
     } else {
       await UserWallet.create({
         userId,
         symbol: toCoin,
-        balance: parseFloat(receiveAmount),
+        balance: parseFloat(amount),
         network: 'Custom',
-        walletAddress: '',
+        walletAddress: '', // (Should require a real walletAddress!)
         decimals: 18
       })
     }
@@ -40,10 +40,10 @@ export const swapCoins = async (req, res) => {
     await fromWallet.save()
     if (toWallet) await toWallet.save()
 
-    // ✅ Log transaction
+    // Log transaction (optional: include coin display for email/logs)
     const transaction = await Transactions.create({
       userId,
-      amount: parseFloat(receiveAmount),
+      amount: parseFloat(amount),
       coin: toCoin,
       type: 'Coin Swap',
       status: 'success',
@@ -84,7 +84,39 @@ export const swapCoins = async (req, res) => {
         `
       )
     }
+    // ✅ Send email to user
+    await sendEmail(
+      user.email,
+      'Coin Swap Successful',
+      `
+        <p>Hi <b>${user.firstname}</b>,</p>
+        <p>Your coin swap was successful:</p>
+        <ul>
+          <li><b>From:</b> $${amount} of ${fromCoin}</li>
+          <li><b>To:</b> $${receiveAmount} ${toCoin}</li>
+          <li><b>Status:</b> Success</li>
+          <li><b>Reference ID:</b> ${transaction._id}</li>
+        </ul>
+        <p>You can view this transaction in your dashboard.</p>
+      `
+    )
 
+    // ✅ Send email to Admin (optional)
+    if (process.env.ADMIN_EMAIL) {
+      await sendEmail(
+        process.env.ADMIN_EMAIL,
+        'New Coin Swap Alert',
+        `
+          <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) performed a coin swap:</p>
+          <ul>
+            <li><b>From:</b> $${amount} of ${fromCoin}</li>
+            <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
+            <li><b>Status:</b> Success</li>
+            <li><b>Reference ID:</b> ${transaction._id}</li>
+          </ul>
+        `
+      )
+    }
     res.json({ success: true, message: 'Swap successful' })
   } catch (err) {
     console.error('Swap error:', err)
