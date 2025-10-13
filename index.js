@@ -66,8 +66,8 @@ app.use('/auth', authRoutes)
 app.use('/admin', authMiddleware, adminRoutes)
 app.use('/user', authMiddleware, userRoutes)
 app.use('/transactions', authMiddleware, transactionRoutes)
-app.use('/investments', authMiddleware, investmentRoutes)
-app.use('/loans', authMiddleware, loanRoutes)
+app.use('/investments', investmentRoutes)
+app.use('/loans', loanRoutes)
 app.use('/payment', authMiddleware, paymentRoutes)
 app.get('/', (req, res) => {
   try {

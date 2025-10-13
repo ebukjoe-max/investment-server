@@ -8,15 +8,16 @@ import {
   postUserInvestment,
   updateInvestmentPlan
 } from '../../controllers/investment/Investment.js'
+import { authMiddleware } from '../../middleware/authMiddleware.js'
 
 const router = express.Router()
 
 router.get('/', getAllInvestmentPlans)
-router.delete('/:id', deleteInvestmentPlan)
-router.put('/:id', updateInvestmentPlan)
-router.post('/user-investments', postUserInvestment)
-router.get('/:userId', getUserInvestments)
-router.get('/all/investments', getAllUserInvestments)
-router.post('/create-plan', createInvestmentplan)
+router.delete('/:id', authMiddleware, deleteInvestmentPlan)
+router.put('/:id', authMiddleware, updateInvestmentPlan)
+router.post('/user-investments', authMiddleware, postUserInvestment)
+router.get('/:userId', authMiddleware, getUserInvestments)
+router.get('/all/investments', authMiddleware, getAllUserInvestments)
+router.post('/create-plan', authMiddleware, createInvestmentplan)
 
 export default router
