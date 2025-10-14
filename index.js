@@ -18,27 +18,25 @@ import { processInvestments } from './configs/processInvestments.js'
 
 EventEmitter.defaultMaxListeners = 20
 
+dotenv.config()
 const app = express()
+const PORT = process.env.PORT || 5000
 
-// middlewares
+// Middleware
 app.set('trust proxy', 1)
 app.use(cookieParser())
 app.use(helmet())
-dotenv.config()
 app.use(express.json())
+
 const allowedOrigins = [
   'http://localhost:3000',
-  'http://10.0.1.23:3000',
-  'http://192.168.248.88:3001',
-  'http://172.20.10.2:3000',
-  'http://192.168.254.88:3001',
   'https://thurderxtorm.netlify.app',
   'https://thurderxfinanceltd.netlify.app'
 ]
 
 app.use(
   cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true)
       } else {
@@ -49,19 +47,13 @@ app.use(
   })
 )
 
-// Run every day at midnight server time
-nodeCron.schedule('0 0 * * *', async () => {
-  console.log('⏰ Running daily investment processor...')
-  await processInvestments()
-})
-
-// Optional: run every X minutes for testing
+// CRON JOBS
 nodeCron.schedule('*/5 * * * *', async () => {
   console.log('⏰ Running investment processor every 5 minutes...')
   await processInvestments()
 })
 
-// ROUTES
+// Routes
 app.use('/auth', authRoutes)
 app.use('/admin', authMiddleware, adminRoutes)
 app.use('/user', authMiddleware, userRoutes)
@@ -69,22 +61,22 @@ app.use('/transactions', authMiddleware, transactionRoutes)
 app.use('/investments', investmentRoutes)
 app.use('/loans', loanRoutes)
 app.use('/payment', authMiddleware, paymentRoutes)
+// app.get('/backend', (req, res) => {
+//   res.send('Backend root is running fine ✅');
+// });
+app.get('/backend', (req, res) => res.redirect('/'))
 app.get('/', (req, res) => {
-  try {
-    console.log('server is running on port 5000')
-    res.send('Serving is running')
-  } catch (error) {
-    console.log('error', error)
-    res.send('server failed')
-  }
+  res.send('Server is running fine ✅')
 })
-// CRON JOB
-// curl -s https://yourdomain.com/cron/process-investments
+
+// Cron test route
 app.get('/cron/process-investments', async (req, res) => {
   await processInvestments()
   res.json({ status: 'ok', message: 'Investments processed' })
 })
 
+// MongoDB connection
 mongodbConnection()
 
-app.listen(5000, console.log(' server is up and running'))
+// Start server
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`))
