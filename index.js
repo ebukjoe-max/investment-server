@@ -29,9 +29,9 @@ app.use(helmet())
 app.use(express.json())
 
 const allowedOrigins = [
+  'https://app.solnance.com',
   'http://localhost:3000',
-  'https://thurderxtorm.netlify.app',
-  'https://thurderxfinanceltd.netlify.app'
+  'https://admin.solnance.com'
 ]
 
 app.use(
