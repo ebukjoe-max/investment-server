@@ -31,6 +31,7 @@ app.use(express.json())
 const allowedOrigins = [
   'https://app.solnance.com',
   'http://localhost:3000',
+  'http://10.0.1.23:3000',
   'https://admin.solnance.com'
 ]
 
