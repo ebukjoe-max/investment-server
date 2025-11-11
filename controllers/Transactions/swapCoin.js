@@ -5,9 +5,9 @@ import sendEmail from '../../utilities/sendEmail.js'
 
 export const swapCoins = async (req, res) => {
   try {
-    const { userId, fromCoin, toCoin, amount, receiveAmount } = req.body
+    const { userId, fromCoin, toCoin, amountUSD, receiveAmount } = req.body
 
-    if (!userId || !fromCoin || !toCoin || !amount || !receiveAmount) {
+    if (!userId || !fromCoin || !toCoin || !amountUSD || !receiveAmount) {
       return res.status(400).json({ error: 'Missing required fields.' })
     }
 
@@ -18,106 +18,83 @@ export const swapCoins = async (req, res) => {
     const fromWallet = wallets.find(w => w.symbol === fromCoin)
     const toWallet = wallets.find(w => w.symbol === toCoin)
 
-    if (!fromWallet || Number(fromWallet.balance) < Number(amount)) {
-      return res.status(400).json({ error: 'Insufficient balance.' })
+    if (!fromWallet || Number(fromWallet.balance) < Number(amountUSD)) {
+      return res
+        .status(400)
+        .json({ error: 'Insufficient balance in fromCoin wallet.' })
     }
 
-    // USD logic: subtract and add same USD amount
-    fromWallet.balance -= parseFloat(amount)
+    // 🔹 Deduct from source wallet (USD amount)
+    fromWallet.balance -= parseFloat(amountUSD)
+
+    // 🔹 Add to destination wallet (converted amount)
     if (toWallet) {
-      toWallet.balance += parseFloat(amount)
+      toWallet.balance += parseFloat(receiveAmount)
+      await toWallet.save()
     } else {
       await UserWallet.create({
         userId,
         symbol: toCoin,
-        balance: parseFloat(amount),
+        balance: parseFloat(receiveAmount),
         network: 'Custom',
-        walletAddress: '', // (Should require a real walletAddress!)
+        walletAddress: '',
         decimals: 18
       })
     }
 
     await fromWallet.save()
-    if (toWallet) await toWallet.save()
 
-    // Log transaction (optional: include coin display for email/logs)
+    // 🔹 Log the swap transaction
     const transaction = await Transactions.create({
       userId,
-      amount: parseFloat(amount),
-      coin: toCoin,
       type: 'Coin Swap',
       status: 'success',
       method: 'Wallet',
-      details: { fromCoin, amount }
+      amount: parseFloat(amountUSD),
+      coin: toCoin,
+      details: {
+        fromCoin,
+        toCoin,
+        amountUSD,
+        receiveAmount
+      }
     })
 
-    // ✅ Send email to user
-    await sendEmail(
-      user.email,
-      'Coin Swap Successful',
-      `
-        <p>Hi <b>${user.firstname}</b>,</p>
-        <p>Your coin swap was successful:</p>
-        <ul>
-          <li><b>From:</b> ${amount} ${fromCoin}</li>
-          <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
-          <li><b>Status:</b> Success</li>
-          <li><b>Reference ID:</b> ${transaction._id}</li>
-        </ul>
-        <p>You can view this transaction in your dashboard.</p>
-      `
-    )
+    // 🔹 Prepare email templates
+    const userMessage = `
+      <p>Hi <b>${user.firstname}</b>,</p>
+      <p>Your coin swap was successful:</p>
+      <ul>
+        <li><b>From:</b> $${amountUSD} of ${fromCoin}</li>
+        <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
+        <li><b>Status:</b> Success</li>
+        <li><b>Reference ID:</b> ${transaction._id}</li>
+      </ul>
+      <p>You can view this transaction in your dashboard.</p>
+    `
 
-    // ✅ Send email to Admin (optional)
+    const adminMessage = `
+      <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) performed a coin swap:</p>
+      <ul>
+        <li><b>From:</b> $${amountUSD} of ${fromCoin}</li>
+        <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
+        <li><b>Status:</b> Success</li>
+        <li><b>Reference ID:</b> ${transaction._id}</li>
+      </ul>
+    `
+
+    // 🔹 Send confirmation emails (User + Admin)
+    await sendEmail(user.email, 'Coin Swap Successful', userMessage)
+
     if (process.env.ADMIN_EMAIL) {
       await sendEmail(
         process.env.ADMIN_EMAIL,
         'New Coin Swap Alert',
-        `
-          <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) performed a coin swap:</p>
-          <ul>
-            <li><b>From:</b> ${amount} ${fromCoin}</li>
-            <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
-            <li><b>Status:</b> Success</li>
-            <li><b>Reference ID:</b> ${transaction._id}</li>
-          </ul>
-        `
+        adminMessage
       )
     }
-    // ✅ Send email to user
-    await sendEmail(
-      user.email,
-      'Coin Swap Successful',
-      `
-        <p>Hi <b>${user.firstname}</b>,</p>
-        <p>Your coin swap was successful:</p>
-        <ul>
-          <li><b>From:</b> $${amount} of ${fromCoin}</li>
-          <li><b>To:</b> $${receiveAmount} ${toCoin}</li>
-          <li><b>Status:</b> Success</li>
-          <li><b>Reference ID:</b> ${transaction._id}</li>
-        </ul>
-        <p>You can view this transaction in your dashboard.</p>
-      `
-    )
 
-    // ✅ Send email to Admin (optional)
-    if (process.env.ADMIN_EMAIL) {
-      await sendEmail(
-        process.env.ADMIN_EMAIL,
-        'New Coin Swap Alert',
-        `
-          <p>User <b>${user.firstname} ${user.lastname}</b> (${user.email}) performed a coin swap:</p>
-          <ul>
-            <li><b>From:</b> $${amount} of ${fromCoin}</li>
-            <li><b>To:</b> ${receiveAmount} ${toCoin}</li>
-            <li><b>Status:</b> Success</li>
-            <li><b>Reference ID:</b> ${transaction._id}</li>
-          </ul>
-        `
-      )
-    }
-    res.json({ success: true, message: 'Swap successful' })
+    res.json({ success: true, message: 'Swap successful', transaction })
   } catch (err) {
     console.error('Swap error:', err)
     res.status(500).json({ error: 'Server error.' })
