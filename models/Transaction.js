@@ -21,6 +21,7 @@ const TransactionSchema = new mongoose.Schema({
       'Loan',
       'Transfer',
       'Investment Profit',
+      'Capital Return',
       'Referral Bonus',
       'Investment'
     ],

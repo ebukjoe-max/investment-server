@@ -20,19 +20,25 @@ export const processInvestments = async () => {
       const { amount, planId, userId, currentDay, durationDays } = inv
       const user = await UserInfo.findById(userId)
 
-      // Pull values from plan first, fallback to investment
+      // 🚨 Prevent crash if user not found
+      if (!user) {
+        console.warn(
+          `⚠️ Skipping investment ${inv._id}: user not found (${userId})`
+        )
+        continue
+      }
+
       const profitRate = planId?.profitRate || inv.dailyProfitRate
       const payoutFrequency = planId?.payoutFrequency
         ? Number(planId.payoutFrequency)
         : 1
 
-      // ✅ Profit per payout cycle
       const profit = (amount * profitRate) / 100
 
       // Credit profit to wallet
       await UserWallet.updateOne({ userId }, { $inc: { balance: profit } })
 
-      // 🎯 Record profit transaction
+      // Record profit transaction
       await Transactions.create({
         userId,
         amount: profit,
@@ -47,7 +53,7 @@ export const processInvestments = async () => {
         }
       })
 
-      // 📧 Email user about profit
+      // Notify user
       await sendEmail(
         user.email,
         'Investment Profit Credited',
@@ -63,49 +69,43 @@ export const processInvestments = async () => {
           <p>Thank you for trusting us.</p>
         `
       )
-      // 📧 Email user about profit
+
+      // Notify admin
       await sendEmail(
         process.env.ADMIN_EMAIL,
         'Investment Profit Credited',
         `
-          <p>Hi Admin </p>
-          <p>User <b>${
-            user.firstname
-          }</b>, investment just generated a profit payout:</p>
+          <p>Hi Admin,</p>
+          <p>User <b>${user.firstname}</b> just received a profit payout.</p>
           <ul>
             <li><b>Plan:</b> ${planId?.name}</li>
             <li><b>Amount Credited:</b> $${profit.toFixed(2)}</li>
             <li><b>Date:</b> ${now.toLocaleString()}</li>
           </ul>
-          <p>You can track this transaction in your dashboard.</p>
-          <p>Thank you for trusting us.</p>
         `
       )
 
-      // Update investment state
+      // Update investment
       inv.totalPaid += profit
       inv.currentDay += payoutFrequency
       inv.lastUpdated = now
 
-      // Schedule next payout
       const nextDate = new Date(inv.nextPayoutDate)
       nextDate.setDate(nextDate.getDate() + payoutFrequency)
       inv.nextPayoutDate = nextDate
 
-      // ✅ Complete investment
+      // Complete investment if fully matured
       if (inv.currentDay >= durationDays) {
         inv.status = 'completed'
 
-        // Return capital if allowed
         if (planId?.capitalBack) {
           await UserWallet.updateOne({ userId }, { $inc: { balance: amount } })
 
-          // 🎯 Record Investment Profit transaction
           await Transactions.create({
             userId,
             amount,
             coin: inv.walletSymbol || 'USD',
-            type: 'Investment Profit',
+            type: 'Capital Return',
             status: 'success',
             method: 'System',
             details: {
@@ -114,21 +114,20 @@ export const processInvestments = async () => {
             }
           })
 
-          // 📧 Email user about Investment Profit
           await sendEmail(
             user.email,
-            'Investment Completed - Investment Profited',
+            'Investment Completed - Capital Returned',
             `
               <p>Hi <b>${user.firstname}</b>,</p>
               <p>Your investment has completed successfully:</p>
               <ul>
                 <li><b>Plan:</b> ${planId?.name}</li>
-                <li><b>Investment Profited:</b> $${amount}</li>
+                <li><b>Capital Returned:</b> $${amount}</li>
                 <li><b>Total Profit Earned:</b> $${inv.totalPaid.toFixed(
                   2
                 )}</li>
               </ul>
-              <p>We appreciate your trust. You can reinvest anytime via your dashboard.</p>
+              <p>We appreciate your trust and look forward to your next investment.</p>
             `
           )
         }
@@ -137,7 +136,7 @@ export const processInvestments = async () => {
       await inv.save()
     }
 
-    console.log(`Processed ${dueInvestments.length} investments.`)
+    console.log(`✅ Processed ${dueInvestments.length} investments.`)
   } catch (err) {
     console.error('Error processing investments:', err)
   }
