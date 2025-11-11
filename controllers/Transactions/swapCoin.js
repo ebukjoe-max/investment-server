@@ -4,6 +4,7 @@ import UserWallet from '../../models/UserWallet.js'
 import sendEmail from '../../utilities/sendEmail.js'
 
 export const swapCoins = async (req, res) => {
+  console.log('Swap request body:', req.body)
   try {
     const { userId, fromCoin, toCoin, amountUSD, receiveAmount } = req.body
 
@@ -12,11 +13,18 @@ export const swapCoins = async (req, res) => {
     }
 
     const user = await User.findById(userId)
+    console.log('User found:', user)
     if (!user) return res.status(404).json({ error: 'User not found.' })
 
     const wallets = await UserWallet.find({ userId })
-    const fromWallet = wallets.find(w => w.symbol === fromCoin)
-    const toWallet = wallets.find(w => w.symbol === toCoin)
+    console.log('User wallets:', wallets)
+
+    const fromWallet = wallets.find(
+      w => w.symbol.toUpperCase() === fromCoin.toUpperCase()
+    )
+    const toWallet = wallets.find(
+      w => w.symbol.toUpperCase() === toCoin.toUpperCase()
+    )
 
     if (!fromWallet || Number(fromWallet.balance) < Number(amountUSD)) {
       return res
@@ -37,10 +45,18 @@ export const swapCoins = async (req, res) => {
         symbol: toCoin,
         balance: parseFloat(receiveAmount),
         network: 'Custom',
-        walletAddress: '',
+        walletAddress: `swap-${userId}-${Date.now()}`,
         decimals: 18
       })
     }
+    console.log('Swap validation:', {
+      userId,
+      fromCoin,
+      toCoin,
+      amountUSD,
+      receiveAmount,
+      fromWallet
+    })
 
     await fromWallet.save()
 
